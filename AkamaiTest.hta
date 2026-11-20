@@ -1,0 +1,376 @@
+<html>
+<head>
+<meta http-equiv="x-ua-compatible" content="IE=9">
+<meta charset="utf-8">
+<HTA:APPLICATION
+  ID="akamai"
+  APPLICATIONNAME="Akamai staging test"
+  BORDER="thin"
+  SCROLL="yes"
+  SINGLEINSTANCE="yes"
+  SHOWINTASKBAR="yes"
+  NAVIGABLE="no" />
+<title>아카마이 스테이징 검사</title>
+<style>
+  body { margin: 0; font-family: "Malgun Gothic", "Segoe UI", sans-serif; background: #f4f6f8; color: #142033; }
+  header { background: #1428a0; color: #fff; padding: 16px 22px; }
+  h1 { margin: 0; font-size: 20px; }
+  header p { margin: 6px 0 0; font-size: 13px; }
+  table.layout { width: 100%; border-collapse: collapse; }
+  td.side { width: 280px; vertical-align: top; padding: 16px; }
+  td.main { vertical-align: top; padding: 16px 16px 16px 0; }
+  .card { background: #fff; padding: 14px; }
+  h2 { margin: 0 0 10px; font-size: 15px; }
+  input.search { width: 250px; padding: 6px 8px; }
+  button { border: 0; padding: 8px 12px; background: #e8edf5; margin-right: 6px; }
+  button.primary { background: #1428a0; color: #fff; }
+  #sites { height: 520px; overflow: auto; border-top: 1px solid #e4e8ee; margin-top: 8px; }
+  #sites label { display: block; padding: 4px 2px; }
+  .pages label { display: inline-block; margin: 0 14px 8px 0; }
+  #rows td, #rows th, .result th, .result td { border-bottom: 1px solid #e4e8ee; padding: 6px 8px; font-size: 13px; text-align: left; }
+  tr.OK td { background: #f3fbf6; }
+  tr.FAIL td { background: #fdecec; }
+  #tablewrap { height: 480px; overflow: auto; background: #fff; }
+</style>
+<script type="text/javascript">
+var HOST = "www.samsung.com";
+var STAGING_IP = "23.220.3.157";
+var sh = null;
+var fso = null;
+var queue = [];
+var current = null;
+var running = false;
+var stopRequested = false;
+var passCount = 0;
+var failCount = 0;
+
+function folderPath() {
+  var path = decodeURI(document.location.pathname);
+  if (path.charAt(0) === "/") path = path.substring(1);
+  var slash = path.lastIndexOf("/");
+  if (slash < 0) slash = path.lastIndexOf("\\");
+  return path.substring(0, slash);
+}
+
+function loadSites() {
+  var file = folderPath() + "\\sitecodes.txt";
+  var stream = fso.OpenTextFile(file, 1, false, 0);
+  var text = stream.ReadAll();
+  stream.Close();
+  var lines = text.split(/\r?\n/);
+  var host = document.getElementById("sites");
+  var html = "";
+  var i;
+  for (i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/^\s+|\s+$/g, "");
+    if (!line || line.charAt(0) === "#") continue;
+    var code = line.split(/\s+/)[0];
+    if (!/^[A-Za-z0-9_]+$/.test(code)) continue;
+    html += "<label data-code='" + code + "'><input type='checkbox' value='" + code + "'> " + code + "</label>";
+  }
+  host.innerHTML = html;
+}
+
+function selectedValues(rootId) {
+  var inputs = document.getElementById(rootId).getElementsByTagName("input");
+  var values = [];
+  var i;
+  for (i = 0; i < inputs.length; i++) {
+    if (inputs[i].type === "checkbox" && inputs[i].checked) values.push(inputs[i].value);
+  }
+  return values;
+}
+
+function updatePicked() {
+  document.getElementById("picked").innerText = "선택 " + selectedValues("sites").length;
+}
+
+function filterSites() {
+  var q = document.getElementById("q").value.replace(/^\s+|\s+$/g, "").toLowerCase();
+  var labels = document.getElementById("sites").getElementsByTagName("label");
+  var i;
+  for (i = 0; i < labels.length; i++) {
+    var code = labels[i].getAttribute("data-code").toLowerCase();
+    labels[i].style.display = (!q || code.indexOf(q) !== -1) ? "block" : "none";
+  }
+}
+
+function setVisible(checked) {
+  var labels = document.getElementById("sites").getElementsByTagName("label");
+  var i;
+  for (i = 0; i < labels.length; i++) {
+    if (labels[i].style.display === "none") continue;
+    labels[i].getElementsByTagName("input")[0].checked = checked;
+  }
+  updatePicked();
+}
+
+function clearSites() {
+  var inputs = document.getElementById("sites").getElementsByTagName("input");
+  var i;
+  for (i = 0; i < inputs.length; i++) inputs[i].checked = false;
+  updatePicked();
+}
+
+function esc(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function quoteArg(value) {
+  return "\"" + String(value).replace(/\"/g, "\\\"") + "\"";
+}
+
+function pagePath(id) {
+  if (id === "mypage") return "/mypage/";
+  if (id === "myproducts") return "/mypage/myproducts/";
+  if (id === "myrepair") return "/mypage/myrepair/";
+  if (id === "track-repair") return "/mypage/myrepair/track-repair/";
+  if (id === "getsupport") return "/mypage/getsupport/";
+  if (id === "mysmartthings") return "/mypage/mysmartthings/";
+  if (id === "rewards") return "/mypage/rewards/";
+  return "";
+}
+
+function parseCurl(text) {
+  var status = 0;
+  var location = "";
+  var staging = "";
+  var lines = String(text).split(/\r?\n/);
+  var i;
+  for (i = 0; i < lines.length; i++) {
+    var http = /^HTTP\/\d(?:\.\d)?\s+(\d{3})\b/.exec(lines[i]);
+    if (http) {
+      status = parseInt(http[1], 10);
+      location = "";
+      staging = "";
+      continue;
+    }
+    var header = /^([^:\s]+)\s*:\s*(.*)$/.exec(lines[i]);
+    if (!header) continue;
+    var name = header[1].toLowerCase();
+    if (name === "location") location = header[2];
+    if (name === "x-akamai-staging") staging = header[2];
+  }
+  var code = /HTTP_CODE:(\d+)/.exec(text);
+  var ip = /REMOTE_IP:(\S*)/.exec(text);
+  if ((!status || status === 0) && code) status = parseInt(code[1], 10);
+  return { status: status || 0, location: location, staging: staging, ip: ip ? ip[1] : "" };
+}
+
+function absoluteLocation(requestUrl, location) {
+  if (!location) return "";
+  location = location.replace(/^\s+|\s+$/g, "");
+  if (location.indexOf("http://") === 0 || location.indexOf("https://") === 0) return location;
+  if (location.indexOf("//") === 0) return "https:" + location;
+  if (location.charAt(0) === "/") return "https://" + HOST + location;
+  return location;
+}
+
+function locationOk(location, code) {
+  var expect = ("https://" + HOST + "/" + code + "/common/parking").toLowerCase();
+  var actual = String(location).replace(/\/+$/, "").toLowerCase();
+  if (actual.indexOf(expect) !== 0) return false;
+  if (actual.length === expect.length) return true;
+  var next = actual.charAt(expect.length);
+  return next === "/" || next === "?" || next === "#";
+}
+
+function judge(parsed, code) {
+  var reasons = [];
+  var redirect = parsed.status === 301 || parsed.status === 302 || parsed.status === 303 || parsed.status === 307 || parsed.status === 308;
+  if (!redirect) reasons.push("상태코드 " + (parsed.status || "없음"));
+  if (!parsed.location) reasons.push("Location 없음");
+  else if (!locationOk(parsed.location, code)) reasons.push("Location 불일치");
+  if (!parsed.staging) reasons.push("스테이징 헤더 없음");
+  return reasons;
+}
+
+function setStatus(text) {
+  document.getElementById("status").innerText = text;
+}
+
+function addResult(item, parsed, reasons, errorText) {
+  var ok = !errorText && reasons.length === 0;
+  if (ok) passCount++; else failCount++;
+  var result = ok ? "OK" : "FAIL";
+  var status = errorText ? "ERR" : String(parsed.status || "");
+  var location = errorText ? errorText : (parsed.location || "-");
+  var row = document.getElementById("rows").insertRow(-1);
+  row.className = result;
+  row.insertCell(-1).innerText = result;
+  row.insertCell(-1).innerText = item.code;
+  row.insertCell(-1).innerText = item.path;
+  row.insertCell(-1).innerText = status;
+  row.insertCell(-1).innerText = location;
+  var box = document.getElementById("tablewrap");
+  box.scrollTop = box.scrollHeight;
+}
+
+function buildCommand(url) {
+  var curl = sh.ExpandEnvironmentStrings("%SystemRoot%") + "\\System32\\curl.exe";
+  return quoteArg(curl) + " -sS --ipv4 --http1.1 --max-redirs 0 --connect-timeout 10 --max-time 20 --noproxy * --resolve " +
+    HOST + ":443:" + document.getElementById("ip").value.replace(/^\s+|\s+$/g, "") + " -D - -o NUL -w " + quoteArg("HTTP_CODE:%{http_code} REMOTE_IP:%{remote_ip}") + " " + quoteArg(url);
+}
+
+function startRun() {
+  if (running) return;
+  var sites = selectedValues("sites");
+  var pages = selectedValues("pages");
+  if (!sites.length || !pages.length) {
+    setStatus("국가와 페이지를 하나 이상 고르세요.");
+    return;
+  }
+  queue = [];
+  var s, p;
+  for (s = 0; s < sites.length; s++) {
+    for (p = 0; p < pages.length; p++) {
+      var path = pagePath(pages[p]);
+      var url = "https://" + HOST + "/" + sites[s] + path;
+      queue.push({ code: sites[s], path: path, url: url, cmd: buildCommand(url) });
+    }
+  }
+  document.getElementById("rows").innerHTML = "";
+  passCount = 0;
+  failCount = 0;
+  stopRequested = false;
+  running = true;
+  document.getElementById("run").disabled = true;
+  document.getElementById("stop").disabled = false;
+  setStatus("0/" + queue.length);
+  pump();
+}
+
+function finish() {
+  running = false;
+  current = null;
+  document.getElementById("run").disabled = false;
+  document.getElementById("stop").disabled = true;
+  var total = passCount + failCount;
+  setStatus("끝. 성공 " + passCount + " / 실패 " + failCount + "  (" + total + "건)");
+}
+
+function pump() {
+  if (!running) return;
+  if (stopRequested && !current) {
+    queue = [];
+    finish();
+    setStatus("중지했습니다. 성공 " + passCount + " / 실패 " + failCount);
+    return;
+  }
+  if (!current) {
+    if (!queue.length) {
+      finish();
+      return;
+    }
+    current = queue.shift();
+    try {
+      current.exec = sh.Exec(current.cmd);
+    } catch (err) {
+      addResult(current, { status: 0, location: "", staging: "" }, ["curl 실행 실패"], err.message);
+      current = null;
+      setTimeout(pump, 10);
+      return;
+    }
+  }
+  if (current.exec.Status === 0) {
+    setTimeout(pump, 200);
+    return;
+  }
+  var output = "";
+  var errorText = "";
+  try { output = current.exec.StdOut.ReadAll(); } catch (ignore) {}
+  try { errorText = current.exec.StdErr.ReadAll(); } catch (ignore2) {}
+  var parsed = parseCurl(output);
+  if (current.exec.ExitCode !== 0 && !parsed.status) {
+    addResult(current, parsed, ["연결 실패"], errorText || "curl 종료 코드 " + current.exec.ExitCode);
+  } else {
+    parsed.location = absoluteLocation(current.url, parsed.location);
+    var reasons = judge(parsed, current.code);
+    addResult(current, parsed, reasons, "");
+  }
+  var done = passCount + failCount;
+  var total = done + queue.length;
+  setStatus(done + "/" + total + "  성공 " + passCount + "  실패 " + failCount);
+  current = null;
+  setTimeout(pump, 10);
+}
+
+function stopRun() {
+  stopRequested = true;
+  if (current && current.exec) {
+    try { current.exec.Terminate(); } catch (ignore) {}
+  }
+}
+
+function boot() {
+  sh = new ActiveXObject("WScript.Shell");
+  fso = new ActiveXObject("Scripting.FileSystemObject");
+  try {
+    loadSites();
+  } catch (err) {
+    setStatus("sitecodes.txt 를 읽지 못했습니다. 이 파일과 같은 폴더에 두세요.");
+  }
+  document.getElementById("sites").onclick = updatePicked;
+  document.getElementById("q").onkeyup = filterSites;
+  document.getElementById("all").onclick = function () { setVisible(true); };
+  document.getElementById("none").onclick = clearSites;
+  document.getElementById("run").onclick = startRun;
+  document.getElementById("stop").onclick = stopRun;
+  window.resizeTo(1100, 760);
+}
+</script>
+</head>
+<body onload="boot()">
+<header>
+  <h1>아카마이 스테이징 검사</h1>
+  <p>이 파일만 더블클릭하면 됩니다. www.samsung.com 요청을 23.220.3.157 로 보내 리다이렉트를 확인합니다.</p>
+</header>
+<table class="layout">
+  <tr>
+    <td class="side">
+      <div class="card">
+        <h2>국가</h2>
+        <input id="q" class="search" type="text" placeholder="코드 검색. 예: ae, sec">
+        <div style="margin-top:8px;">
+          <button type="button" id="all">보이는 것 선택</button>
+          <button type="button" id="none">선택 해제</button>
+        </div>
+        <div id="picked" style="margin:8px 0;">선택 0</div>
+        <div id="sites"></div>
+      </div>
+    </td>
+    <td class="main">
+      <div class="card">
+        <h2>페이지</h2>
+        <div class="pages" id="pages">
+          <label><input type="checkbox" value="mypage"> /mypage/</label>
+          <label><input type="checkbox" value="myproducts"> /mypage/myproducts/</label>
+          <label><input type="checkbox" value="myrepair"> /mypage/myrepair/</label>
+          <label><input type="checkbox" value="track-repair"> /mypage/myrepair/track-repair/</label>
+          <label><input type="checkbox" value="getsupport"> /mypage/getsupport/</label>
+          <label><input type="checkbox" value="mysmartthings"> /mypage/mysmartthings/</label>
+          <label><input type="checkbox" value="rewards"> /mypage/rewards/</label>
+          <div style="margin:8px 0;">스테이징 IP <input id="ip" value="23.220.3.157" style="width:140px;"></div>
+        </div>
+        <div>
+          <button type="button" class="primary" id="run">검사</button>
+          <button type="button" id="stop" disabled>중지</button>
+        </div>
+        <div id="status" style="margin:10px 0;">국가와 페이지를 고른 다음 검사를 누르세요.</div>
+        <div id="tablewrap">
+          <table class="result">
+            <thead>
+              <tr><th>결과</th><th>국가</th><th>경로</th><th>상태</th><th>Location</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

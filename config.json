@@ -1,0 +1,19 @@
+{
+  "host": "www.samsung.com",
+  "stagingIp": "23.220.3.157",
+  "requireStagingHeader": true,
+  "timeoutSec": 20,
+  "expectedStatuses": "301|302|303|307|308",
+  "expectedLocation": "https://www.samsung.com/{sitecode}/common/parking/",
+  "locationMatch": "prefix",
+  "siteCodeFile": "sitecodes.txt",
+  "patterns": [
+    "https://www.samsung.com/{sitecode}/mypage/",
+    "https://www.samsung.com/{sitecode}/mypage/myproducts/",
+    "https://www.samsung.com/{sitecode}/mypage/myrepair/",
+    "https://www.samsung.com/{sitecode}/mypage/myrepair/track-repair/",
+    "https://www.samsung.com/{sitecode}/mypage/getsupport/"
+  ],
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "pragma": "akamai-x-cache-on, akamai-x-cache-remote-on, akamai-x-check-cacheable, akamai-x-get-request-id"
+}

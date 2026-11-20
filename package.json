@@ -1,0 +1,8 @@
+{
+  "name": "akamai-staging-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs"
+  }
+}
