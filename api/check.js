@@ -1,11 +1,11 @@
-import { checkOne, PAGES, validIpv4, DEFAULT_STAGING_IP, normalizePath } from "../lib/check.js";
+import { checkOne, PAGES, validIpv4, normalizePath } from "../lib/check.js";
 
 export async function GET(request) {
   const url = new URL(request.url);
   const site = url.searchParams.get("site") || "";
   const page = url.searchParams.get("page") || "";
   const customPath = url.searchParams.get("path") || "";
-  const ip = url.searchParams.get("ip") || DEFAULT_STAGING_IP;
+  const ip = url.searchParams.get("ip") || "";
   const path = customPath ? normalizePath(customPath) : PAGES[page];
   if (!/^[A-Za-z0-9_]+$/.test(site) || !path) {
     return Response.json({ error: "국가와 페이지 경로를 확인하세요." }, { status: 400 });

@@ -34,7 +34,6 @@
 </style>
 <script type="text/javascript">
 var HOST = "www.samsung.com";
-var STAGING_IP = "23.220.3.157";
 var sh = null;
 var fso = null;
 var queue = [];
@@ -219,8 +218,13 @@ function startRun() {
   if (running) return;
   var sites = selectedValues("sites");
   var pages = selectedValues("pages");
+  var ip = document.getElementById("ip").value.replace(/^\s+|\s+$/g, "");
   if (!sites.length || !pages.length) {
     setStatus("국가와 페이지를 하나 이상 고르세요.");
+    return;
+  }
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    setStatus("스테이징 IP를 입력하세요.");
     return;
   }
   queue = [];
@@ -326,7 +330,7 @@ function boot() {
 <body onload="boot()">
 <header>
   <h1>아카마이 스테이징 검사</h1>
-  <p>이 파일만 더블클릭하면 됩니다. www.samsung.com 요청을 23.220.3.157 로 보내 리다이렉트를 확인합니다.</p>
+  <p>이 파일만 더블클릭하면 됩니다. www.samsung.com 요청을 입력한 스테이징 IP로 보내 리다이렉트를 확인합니다.</p>
 </header>
 <table class="layout">
   <tr>
@@ -353,7 +357,7 @@ function boot() {
           <label><input type="checkbox" value="getsupport"> /mypage/getsupport/</label>
           <label><input type="checkbox" value="mysmartthings"> /mypage/mysmartthings/</label>
           <label><input type="checkbox" value="rewards"> /mypage/rewards/</label>
-          <div style="margin:8px 0;">스테이징 IP <input id="ip" value="23.220.3.157" style="width:140px;"></div>
+          <div style="margin:8px 0;">스테이징 IP <input id="ip" placeholder="직접 입력" style="width:140px;"></div>
         </div>
         <div>
           <button type="button" class="primary" id="run">검사</button>

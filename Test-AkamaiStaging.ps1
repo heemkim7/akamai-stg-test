@@ -3,7 +3,7 @@
   www.samsung.com 요청만 아카마이 스테이징 IP로 보내 마이페이지 리다이렉트를 검사합니다.
 
 .DESCRIPTION
-  호스트 파일의 "23.220.3.157 www.samsung.com" 과 같은 매핑을 요청마다 적용합니다.
+  www.samsung.com 요청만 입력한 아카마이 스테이징 IP로 보내 마이페이지 리다이렉트를 검사합니다.
   시스템 호스트 파일은 수정하지 않습니다.
 
 .EXAMPLE

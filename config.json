@@ -1,6 +1,6 @@
 {
   "host": "www.samsung.com",
-  "stagingIp": "23.220.3.157",
+  "stagingIp": "",
   "requireStagingHeader": true,
   "timeoutSec": 20,
   "expectedStatuses": "301|302|303|307|308",

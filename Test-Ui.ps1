@@ -306,7 +306,7 @@ $html = @'
 <body>
 <header>
   <h1>아카마이 스테이징 검사</h1>
-  <p>www.samsung.com 을 23.220.3.157 로 붙여 리다이렉트를 확인합니다.</p>
+  <p>www.samsung.com 을 입력한 스테이징 IP로 붙여 리다이렉트를 확인합니다.</p>
 </header>
 <main>
   <section>
