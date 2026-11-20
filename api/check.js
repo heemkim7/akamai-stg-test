@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!/^[A-Za-z0-9_]+$/.test(site) || !path) {
     return Response.json({ error: "국가와 페이지 경로를 확인하세요." }, { status: 400 });
   }
-  if (!validIpv4(ip)) {
+  if (ip && !validIpv4(ip)) {
     return Response.json({ error: "스테이징 IP 형식을 확인하세요." }, { status: 400 });
   }
   return Response.json(await checkOne(site, page, ip, path));

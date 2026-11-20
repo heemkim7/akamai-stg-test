@@ -28,8 +28,11 @@
   #sites label { display: block; padding: 4px 2px; }
   .pages label { display: inline-block; margin: 0 14px 8px 0; }
   #rows td, #rows th, .result th, .result td { border-bottom: 1px solid #e4e8ee; padding: 6px 8px; font-size: 13px; text-align: left; }
-  tr.OK td { background: #f3fbf6; }
-  tr.FAIL td { background: #fdecec; }
+  tr.s2 td:first-child { color: #248a3d; font-weight: bold; }
+  tr.s3 td:first-child { color: #0071e3; font-weight: bold; }
+  tr.s4 td:first-child { color: #d70015; font-weight: bold; }
+  tr.s5 td:first-child { color: #c93400; font-weight: bold; }
+  tr.s0 td:first-child { color: #6e6e73; font-weight: bold; }
   #tablewrap { height: 480px; overflow: auto; background: #fff; }
 </style>
 <script type="text/javascript">
@@ -40,8 +43,7 @@ var queue = [];
 var current = null;
 var running = false;
 var stopRequested = false;
-var passCount = 0;
-var failCount = 0;
+var counts = { s2: 0, s3: 0, s4: 0, s5: 0, s0: 0 };
 
 function folderPath() {
   var path = decodeURI(document.location.pathname);
@@ -183,7 +185,8 @@ function judge(parsed, code) {
   if (!redirect) reasons.push("상태코드 " + (parsed.status || "없음"));
   if (!parsed.location) reasons.push("Location 없음");
   else if (!locationOk(parsed.location, code)) reasons.push("Location 불일치");
-  if (!parsed.staging) reasons.push("스테이징 헤더 없음");
+  var pinned = document.getElementById("ip").value.replace(/^\s+|\s+$/g, "");
+  if (pinned && !parsed.staging) reasons.push("스테이징 헤더 없음");
   return reasons;
 }
 
@@ -191,18 +194,27 @@ function setStatus(text) {
   document.getElementById("status").innerText = text;
 }
 
+function statusView(status) {
+  var n = parseInt(status, 10);
+  if (n >= 200 && n < 300) return { cls: "s2", label: n + " OK" };
+  if (n >= 300 && n < 400) return { cls: "s3", label: n + " 리다이렉트" };
+  if (n >= 400 && n < 500) return { cls: "s4", label: String(n) };
+  if (n >= 500 && n < 600) return { cls: "s5", label: String(n) };
+  return { cls: "s0", label: "연결 실패" };
+}
+function countText() {
+  return "200 " + counts.s2 + "  ·  리다이렉트 " + counts.s3 + "  ·  4xx " + counts.s4 + "  ·  5xx " + counts.s5 + (counts.s0 ? "  ·  연결 실패 " + counts.s0 : "");
+}
 function addResult(item, parsed, reasons, errorText) {
-  var ok = !errorText && reasons.length === 0;
-  if (ok) passCount++; else failCount++;
-  var result = ok ? "OK" : "FAIL";
-  var status = errorText ? "ERR" : String(parsed.status || "");
+  var view = statusView(errorText ? 0 : parsed.status);
+  counts[view.cls]++;
   var location = errorText ? errorText : (parsed.location || "-");
   var row = document.getElementById("rows").insertRow(-1);
-  row.className = result;
-  row.insertCell(-1).innerText = result;
+  row.className = view.cls;
+  row.insertCell(-1).innerText = view.label;
   row.insertCell(-1).innerText = item.code;
   row.insertCell(-1).innerText = item.path;
-  row.insertCell(-1).innerText = status;
+  row.insertCell(-1).innerText = errorText ? "ERR" : String(parsed.status || "");
   row.insertCell(-1).innerText = location;
   var box = document.getElementById("tablewrap");
   box.scrollTop = box.scrollHeight;
@@ -210,8 +222,10 @@ function addResult(item, parsed, reasons, errorText) {
 
 function buildCommand(url) {
   var curl = sh.ExpandEnvironmentStrings("%SystemRoot%") + "\\System32\\curl.exe";
-  return quoteArg(curl) + " -sS --ipv4 --http1.1 --max-redirs 0 --connect-timeout 10 --max-time 20 --noproxy * --resolve " +
-    HOST + ":443:" + document.getElementById("ip").value.replace(/^\s+|\s+$/g, "") + " -D - -o NUL -w " + quoteArg("HTTP_CODE:%{http_code} REMOTE_IP:%{remote_ip}") + " " + quoteArg(url);
+  var ip = document.getElementById("ip").value.replace(/^\s+|\s+$/g, "");
+  var resolve = ip ? " --resolve " + HOST + ":443:" + ip : "";
+  return quoteArg(curl) + " -sS --ipv4 --http1.1 --max-redirs 0 --connect-timeout 10 --max-time 20 --noproxy *" +
+    resolve + " -D - -o NUL -w " + quoteArg("HTTP_CODE:%{http_code} REMOTE_IP:%{remote_ip}") + " " + quoteArg(url);
 }
 
 function startRun() {
@@ -223,8 +237,8 @@ function startRun() {
     setStatus("국가와 페이지를 하나 이상 고르세요.");
     return;
   }
-  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
-    setStatus("스테이징 IP를 입력하세요.");
+  if (ip && !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    setStatus("스테이징 IP 형식을 확인하세요.");
     return;
   }
   queue = [];
@@ -237,8 +251,7 @@ function startRun() {
     }
   }
   document.getElementById("rows").innerHTML = "";
-  passCount = 0;
-  failCount = 0;
+  counts = { s2: 0, s3: 0, s4: 0, s5: 0, s0: 0 };
   stopRequested = false;
   running = true;
   document.getElementById("run").disabled = true;
@@ -252,8 +265,7 @@ function finish() {
   current = null;
   document.getElementById("run").disabled = false;
   document.getElementById("stop").disabled = true;
-  var total = passCount + failCount;
-  setStatus("끝. 성공 " + passCount + " / 실패 " + failCount + "  (" + total + "건)");
+  setStatus("끝. " + countText());
 }
 
 function pump() {
@@ -261,7 +273,7 @@ function pump() {
   if (stopRequested && !current) {
     queue = [];
     finish();
-    setStatus("중지했습니다. 성공 " + passCount + " / 실패 " + failCount);
+    setStatus("중지했습니다. " + countText());
     return;
   }
   if (!current) {
@@ -295,9 +307,9 @@ function pump() {
     var reasons = judge(parsed, current.code);
     addResult(current, parsed, reasons, "");
   }
-  var done = passCount + failCount;
+  var done = counts.s2 + counts.s3 + counts.s4 + counts.s5 + counts.s0;
   var total = done + queue.length;
-  setStatus(done + "/" + total + "  성공 " + passCount + "  실패 " + failCount);
+  setStatus(done + "/" + total + "  " + countText());
   current = null;
   setTimeout(pump, 10);
 }
@@ -357,7 +369,7 @@ function boot() {
           <label><input type="checkbox" value="getsupport"> /mypage/getsupport/</label>
           <label><input type="checkbox" value="mysmartthings"> /mypage/mysmartthings/</label>
           <label><input type="checkbox" value="rewards"> /mypage/rewards/</label>
-          <div style="margin:8px 0;">스테이징 IP <input id="ip" placeholder="직접 입력" style="width:140px;"></div>
+          <div style="margin:8px 0;">스테이징 IP <input id="ip" placeholder="비우면 www.samsung.com" style="width:180px;"></div>
         </div>
         <div>
           <button type="button" class="primary" id="run">검사</button>
